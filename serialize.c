@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
+#include "array.h"
 
 #define TYPE_NIL 0
 #define TYPE_BOOLEAN 1
@@ -39,26 +40,26 @@ struct write_block {
 	struct block * head;
 	int len;
 	struct block * current;
-	int ptr;
+	int ptr;	// 表明当前block写到哪里了
 };
 
 struct read_block {
 	char * buffer;
 	struct block * current;
 	int len;
-	int ptr;
+	int ptr;	// 表明当前block读到哪里了
 };
 
 inline static struct block *
 blk_alloc(void) {
-	struct block *b = malloc(sizeof(struct block));
+	struct block *b = (struct block *)malloc(sizeof(struct block));
 	b->next = NULL;
 	return b;
 }
 
 inline static void
 wb_push(struct write_block *b, const void *buf, int sz) {
-	const char * buffer = buf;
+	const char * buffer = (const char *)buf;
 	if (b->ptr == BLOCK_SIZE) {
 _again:
 		b->current = b->current->next = blk_alloc();
@@ -173,7 +174,7 @@ rb_read(struct read_block *rb, void *buffer, int sz) {
 		return ret;
 	}
 
-	char * tmp = buffer;
+	char * tmp = (char *)buffer;
 
 	memcpy(tmp, rb->current->buffer + rb->ptr,  copy);
 	sz -= copy;
@@ -427,7 +428,7 @@ lpack(lua_State *L) {
 static int
 lappend(lua_State *L) {
 	struct write_block b;
-	wb_init(&b, lua_touserdata(L,1));
+	wb_init(&b, (block *)lua_touserdata(L,1));
 	pack_from(L,&b,1);
 	struct block * ret = wb_close(&b);
 	lua_pushlightuserdata(L,ret);
@@ -449,7 +450,7 @@ get_integer(lua_State *L, struct read_block *rb, int cookie) {
 		return 0;
 	case TYPE_NUMBER_BYTE: {
 		uint8_t n = 0;
-		uint8_t * pn = rb_read(rb, &n, sizeof(n));
+		uint8_t * pn = (uint8_t *)rb_read(rb, &n, sizeof(n));
 		if (pn == NULL)
 			invalid_stream(L,rb);
 		n = *pn;
@@ -457,7 +458,7 @@ get_integer(lua_State *L, struct read_block *rb, int cookie) {
 	}
 	case TYPE_NUMBER_WORD: {
 		uint16_t n = 0;
-		uint16_t * pn = rb_read(rb, &n, sizeof(n));
+		uint16_t * pn = (uint16_t *)rb_read(rb, &n, sizeof(n));
 		if (pn == NULL)
 			invalid_stream(L,rb);
 		memcpy(&n, pn, sizeof(n));
@@ -465,7 +466,7 @@ get_integer(lua_State *L, struct read_block *rb, int cookie) {
 	}
 	case TYPE_NUMBER_DWORD: {
 		int32_t n = 0;
-		int32_t * pn = rb_read(rb, &n, sizeof(n));
+		int32_t * pn = (int32_t *)rb_read(rb, &n, sizeof(n));
 		if (pn == NULL)
 			invalid_stream(L,rb);
 		memcpy(&n, pn, sizeof(n));
@@ -473,7 +474,7 @@ get_integer(lua_State *L, struct read_block *rb, int cookie) {
 	}
 	case TYPE_NUMBER_QWORD: {
 		int64_t n=0;
-		int64_t * pn = rb_read(rb, &n, sizeof(n));
+		int64_t * pn = (int64_t *)rb_read(rb, &n, sizeof(n));
 		if (pn == NULL)
 			invalid_stream(L,rb);
 		memcpy(&n, pn, sizeof(n));
@@ -488,7 +489,7 @@ get_integer(lua_State *L, struct read_block *rb, int cookie) {
 static double
 get_real(lua_State *L, struct read_block *rb) {
 	double n = 0;
-	double * pn = rb_read(rb, &n, sizeof(n));
+	double * pn = (double *)rb_read(rb, &n, sizeof(n));
 	if (pn == NULL)
 		invalid_stream(L,rb);
 	memcpy(&n, pn, sizeof(n));
@@ -507,8 +508,8 @@ get_pointer(lua_State *L, struct read_block *rb) {
 
 static void
 get_buffer(lua_State *L, struct read_block *rb, int len) {
-	char tmp[len];
-	char * p = rb_read(rb,tmp,len);
+	ARRAY(char, tmp, len);
+	char * p = (char *)rb_read(rb,tmp,len);
 	lua_pushlstring(L,p,len);
 }
 
@@ -518,7 +519,7 @@ static void
 unpack_table(lua_State *L, struct read_block *rb, int array_size) {
 	if (array_size == MAX_COOKIE-1) {
 		uint8_t type = 0;
-		uint8_t *t = rb_read(rb, &type, sizeof(type));
+		uint8_t *t = (uint8_t *)rb_read(rb, &type, sizeof(type));
 		if (t==NULL) {
 			invalid_stream(L,rb);
 		}
@@ -572,7 +573,7 @@ push_value(lua_State *L, struct read_block *rb, int type, int cookie) {
 	case TYPE_LONG_STRING: {
 		uint32_t len = 0;
 		if (cookie == 2) {
-			uint16_t *plen = rb_read(rb, &len, 2);
+			uint16_t *plen = (uint16_t *)rb_read(rb, &len, 2);
 			if (plen == NULL) {
 				invalid_stream(L,rb);
 			}
@@ -583,7 +584,7 @@ push_value(lua_State *L, struct read_block *rb, int type, int cookie) {
 			if (cookie != 4) {
 				invalid_stream(L,rb);
 			}
-			uint32_t *plen = rb_read(rb, &len, 4);
+			uint32_t *plen = (uint32_t *)rb_read(rb, &len, 4);
 			if (plen == NULL) {
 				invalid_stream(L,rb);
 			}
@@ -607,7 +608,7 @@ push_value(lua_State *L, struct read_block *rb, int type, int cookie) {
 static void
 unpack_one(lua_State *L, struct read_block *rb) {
 	uint8_t type = 0;
-	uint8_t *t = rb_read(rb, &type, sizeof(type));
+	uint8_t *t = (uint8_t *)rb_read(rb, &type, sizeof(type));
 	if (t==NULL) {
 		invalid_stream(L, rb);
 	}
@@ -617,7 +618,7 @@ unpack_one(lua_State *L, struct read_block *rb) {
 
 static int
 lunpack(lua_State *L) {
-	struct block * blk = lua_touserdata(L,1);
+	struct block * blk = (struct block *)lua_touserdata(L,1);
 	if (blk == NULL) {
 		return luaL_error(L, "Need a block to unpack");
 	}
@@ -631,7 +632,7 @@ lunpack(lua_State *L) {
 			luaL_checkstack(L,LUA_MINSTACK,NULL);
 		}
 		uint8_t type = 0;
-		uint8_t *t = rb_read(&rb, &type, 1);
+		uint8_t *t = (uint8_t *)rb_read(&rb, &type, 1);
 		if (t==NULL)
 			break;
 		push_value(L, &rb, *t & 0x7, *t>>3);
@@ -653,7 +654,7 @@ _dump_mem(const char * buffer, int len, int size) {
 
 static int
 _dump(lua_State *L) {
-	struct block *b = lua_touserdata(L,1);
+	struct block *b = (struct block *)lua_touserdata(L,1);
 	if (b==NULL) {
 		return luaL_error(L, "dump null pointer");
 	}
@@ -672,7 +673,7 @@ _dump(lua_State *L) {
 
 static int
 lserialize(lua_State *L) {
-	struct block *b = lua_touserdata(L,1);
+	struct block *b = (struct block *)lua_touserdata(L,1);
 	if (b==NULL) {
 		return luaL_error(L, "dump null pointer");
 	}
@@ -680,7 +681,7 @@ lserialize(lua_State *L) {
 	uint32_t len = 0;
 	memcpy(&len, b->buffer ,sizeof(len));
 
-	uint8_t * buffer = malloc(len);
+	uint8_t * buffer = (uint8_t *)malloc(len);
 	uint8_t * ptr = buffer;
 	int sz = len;
 	while(len>0) {
@@ -709,7 +710,7 @@ lserialize(lua_State *L) {
 static void
 deserialize_buffer(lua_State *L, void * buffer) {
 	struct read_block rb;
-	rball_init(&rb, buffer);
+	rball_init(&rb, (char *)buffer);
 
 	int i;
 	for (i=0;;i++) {
@@ -717,7 +718,7 @@ deserialize_buffer(lua_State *L, void * buffer) {
 			lua_checkstack(L,i);
 		}
 		uint8_t type = 0;
-		uint8_t *t = rb_read(&rb, &type, 1);
+		uint8_t *t = (uint8_t *)rb_read(&rb, &type, 1);
 		if (t==NULL)
 			break;
 		push_value(L, &rb, *t & 0x7, *t>>3);
@@ -747,7 +748,7 @@ seristring(lua_State *L) {
 	lserialize(L);
 	void *buffer = lua_touserdata(L, -2);
 	int sz = lua_tointeger(L, -1);
-	lua_pushlstring(L, buffer, sz);
+	lua_pushlstring(L, (const char *)buffer, sz);
 	free(buffer);
 	return 1;
 }
@@ -760,6 +761,7 @@ deseristring(lua_State *L) {
 	return lua_gettop(L) - 1;
 }
 
+extern "C" __declspec(dllexport)
 int
 luaopen_serialize(lua_State *L) {
 	luaL_Reg l[] = {
