@@ -765,12 +765,12 @@ extern "C" __declspec(dllexport)
 int
 luaopen_serialize(lua_State *L) {
 	luaL_Reg l[] = {
-		{ "pack", lpack },
+		{ "pack", lpack },							// 将lua数据保存到内存中的block链表，并返回相应的指针(lightuserdata)
 		{ "unpack", lunpack },
 		{ "append", lappend },
-		{ "serialize", lserialize },
+		{ "serialize", lserialize },				// 将pack出来的block链表整理到一整块内存中，并返回对应的长度(len)和指针(lightuserdata)
 		{ "deserialize", ldeserialize },
-		{ "serialize_string", seristring },
+		{ "serialize_string", seristring },			// 将serialize的结果序列成字符串，并返回给脚本，这样就可以通过脚本保存到文件里面了
 		{ "deseristring_string", deseristring },
 		{ "dump", _dump },
 		{ NULL, NULL },
