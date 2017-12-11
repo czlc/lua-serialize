@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
-#include "array.h"
 
 #define TYPE_NIL 0
 #define TYPE_BOOLEAN 1
@@ -30,6 +29,13 @@
 
 #define BLOCK_SIZE 128
 #define MAX_DEPTH 32
+
+#if defined(_MSC_VER)
+#	include <malloc.h>
+#	define ARRAY(type, name, size) type* name = (type*)_alloca((size) * sizeof(type))
+#else
+#	define ARRAY(type, name, size) type name[size]
+#endif
 
 struct block {
 	struct block * next;
@@ -742,10 +748,14 @@ ldeserialize(lua_State *L) {
 
 static int
 seristring(lua_State *L) {
-	lpack(L);
-	lua_replace(L, 1);
-	lua_settop(L, 1);
+	struct write_block b;
+	wb_init(&b, NULL);
+	pack_from(L,&b,0);
+	struct block * ret = wb_close(&b);
+	lua_settop(L,0);
+	lua_pushlightuserdata(L,ret);
 	lserialize(L);
+	wb_free(&b);
 	void *buffer = lua_touserdata(L, -2);
 	int sz = lua_tointeger(L, -1);
 	lua_pushlstring(L, (const char *)buffer, sz);
@@ -761,7 +771,6 @@ deseristring(lua_State *L) {
 	return lua_gettop(L) - 1;
 }
 
-extern "C" __declspec(dllexport)
 int
 luaopen_serialize(lua_State *L) {
 	luaL_Reg l[] = {
