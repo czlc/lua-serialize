@@ -1,3 +1,5 @@
+#define LUA_LIB
+
 #include <lua.h>
 #include <lauxlib.h>
 #include <stdlib.h>
@@ -434,7 +436,7 @@ lpack(lua_State *L) {
 static int
 lappend(lua_State *L) {
 	struct write_block b;
-	wb_init(&b, (block *)lua_touserdata(L,1));
+	wb_init(&b, (struct block *)lua_touserdata(L,1));
 	pack_from(L,&b,1);
 	struct block * ret = wb_close(&b);
 	lua_pushlightuserdata(L,ret);
@@ -771,7 +773,7 @@ deseristring(lua_State *L) {
 	return lua_gettop(L) - 1;
 }
 
-int
+LUAMOD_API int
 luaopen_serialize(lua_State *L) {
 	luaL_Reg l[] = {
 		{ "pack", lpack },							// 将lua数据保存到内存中的block链表，并返回相应的指针(lightuserdata)
